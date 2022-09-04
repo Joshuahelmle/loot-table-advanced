@@ -15,12 +15,12 @@ export declare type LootTable<T extends string = string> = Array<
 export declare type LootTableResolver<
   T extends string = string, // Item Id type
   V extends string = string // Loot Table Id type
-> = (id: V) => LootTable<T> | undefined
+  > = (id: V) => LootTable<T> | undefined
 
 export declare type LootTableResolverAsync<
   T extends string = string,
   V extends string = string
-> = (id: V) => Promise<LootTable<T> | undefined>
+  > = (id: V) => Promise<LootTable<T> | undefined>
 
 export interface ILootItem<T extends string = string> {
   id: T | null
@@ -39,7 +39,7 @@ export function AddLoot<T extends string = string>(
   return loot
 }
 
-function MergeLoot(a: Loot, b: Loot): Loot {
+export function MergeLoot(a: Loot, b: Loot): Loot {
   b.forEach((e) => AddLoot(a, e))
   return a
 }
@@ -155,8 +155,8 @@ export async function _LootTableSummaryAsync<
   for (let i = 0; i < length; i++) {
     const entry: Partial<ILootTableEntry> &
       Pick<ILootTableEntry, 'id' | 'min' | 'max'> = FillInLootEntryDefaults(
-      result[i]
-    )
+        result[i]
+      )
     const id = entry.id
     const group = entry.group
     delete entry.weight
@@ -399,6 +399,7 @@ export function GetLoot<
           for (let i = 0; i < quantity; i++) {
             const loot = GetLoot(otherTable, otherInfo.count, resolver, ++depth)
             depth--
+
             MergeLoot(result, loot)
           }
         } else {
@@ -409,5 +410,60 @@ export function GetLoot<
       }
     }
   }
+  return result
+}
+
+export function GetLootAverage<
+  T extends string = string, // Item Id type
+  V extends string = string // Loot Table Id type
+>(
+  table: LootTable<T>,
+  count: number = 1,
+  resolver?: LootTableResolver<T, V>,
+  depth = 0
+): Loot<T> {
+  if (!Array.isArray(table)) throw new Error('Not a loot table')
+  if (depth > MAX_NESTED) throw new Error(`Too many nested loot tables`)
+  if (count != 1) {
+    table = CloneLootTable(table)
+  }
+  const result = new Array<ILootItem<T>>()
+  const groups = new Set()
+  table.map((e) => groups.add(e.group))
+  for (let pull = 0; pull < count; ++pull) {
+    for (const groupID of groups) {
+      const entries = table
+        .filter((e) => e.group === groupID)
+        .map(FillInLootEntryDefaults)
+      const totalWeight = entries
+        .map((e) => e.weight)
+        .reduce((a, b) => a + b, 0)
+      if (totalWeight == 0) {
+        continue
+      }
+      for (const e of entries) {
+        const avg = e.weight / totalWeight;
+        const quantity = (e.min + e.max) / 2 * avg
+        const id = e.id
+
+        if (id?.startsWith('@')) {
+          const otherInfo = ParseLootID<V>(id.substring(1))
+          if (!otherInfo.id) throw new Error(`Unable to parse ${id}`)
+          if (!resolver) throw new Error(`No resolver for ${id}`)
+          const otherTable = resolver(otherInfo.id)
+          if (!otherTable) throw new Error(`${id} could not be resolved`)
+          const loot = GetLootAverage(otherTable, otherInfo.count, resolver, ++depth)
+          loot.forEach(item => item.quantity *= quantity)
+          MergeLoot(result, loot)
+        } else {
+          if (e.id !== null) {
+            AddLoot(result, { id: e.id, quantity })
+          }
+        }
+
+      }
+    }
+  }
+
   return result
 }
