@@ -5,7 +5,8 @@ export interface ILootTableEntry<T extends string = string> {
   max: number
   step: number
   group: number
-  transform: null | ((x: number) => number)
+  transform: null | ((x: number) => number),
+  dynamicPool? : string
 }
 
 export declare type LootTable<T extends string = string> = Array<
@@ -24,7 +25,8 @@ export declare type LootTableResolverAsync<
 
 export interface ILootItem<T extends string = string> {
   id: T | null
-  quantity: number
+  quantity: number,
+  dynamicPool?: string
 }
 
 export type Loot<T extends string = string> = Array<ILootItem<T>>
@@ -35,7 +37,7 @@ export function AddLoot<T extends string = string>(
 ): Loot {
   const i = loot.findIndex((e) => e.id == item.id)
   if (i >= 0) loot[i].quantity += item.quantity
-  else loot.push(item)
+  else loot.push({...item})
   return loot
 }
 
@@ -324,7 +326,7 @@ export async function GetLootAsync<
           }
         } else {
           if (entry.id !== null) {
-            AddLoot(result, { id: entry.id, quantity })
+            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPool ?  {dynamicPool: entry.dynamicPool}: {})  })
           }
         }
       }
@@ -404,7 +406,7 @@ export function GetLoot<
           }
         } else {
           if (entry.id !== null) {
-            AddLoot(result, { id: entry.id, quantity })
+            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPool ?  {dynamicPool: entry.dynamicPool}: {})  })
           }
         }
       }
@@ -466,4 +468,93 @@ export function GetLootAverage<
   }
 
   return result
+}
+
+
+export function GetLootPercentages<
+  T extends string = string, // Item Id type
+  V extends string = string // Loot Table Id type
+>(
+  table: LootTable<T>,
+  count: number = 1,
+  resolver?: LootTableResolver<T, V>,
+  depth = 0
+): Loot<T> {
+  if (!Array.isArray(table)) throw new Error('Not a loot table')
+  if (depth > MAX_NESTED) throw new Error(`Too many nested loot tables`)
+  if (count != 1) {
+    table = CloneLootTable(table)
+  }
+  const result = new Array<ILootItem<T>>()
+  const groups = new Set()
+  table.map((e) => groups.add(e.group))
+  for (let pull = 0; pull < count; ++pull) {
+    for (const groupID of groups) {
+      const entries = table
+        .filter((e) => e.group === groupID)
+        .map(FillInLootEntryDefaults)
+      const totalWeight = entries
+        .map((e) => e.weight)
+        .reduce((a, b) => a + b, 0)
+      if (totalWeight == 0) {
+        continue
+      }
+      for (const e of entries) {
+        const quantity = e.weight / totalWeight;
+        const id = e.id
+
+        if (id?.startsWith('@')) {
+          const otherInfo = ParseLootID<V>(id.substring(1))
+          if (!otherInfo.id) throw new Error(`Unable to parse ${id}`)
+          if (!resolver) throw new Error(`No resolver for ${id}`)
+          const otherTable = resolver(otherInfo.id)
+          if (!otherTable) throw new Error(`${id} could not be resolved`)
+          const loot = GetLootPercentages(otherTable, otherInfo.count, resolver, ++depth)
+          loot.forEach(item => item.quantity *= quantity)
+          MergeLoot(result, loot)
+        } else {
+          if (e.id !== null) {
+            AddLoot(result, { id: e.id, quantity, ...(e.dynamicPool ?  {dynamicPool: e.dynamicPool}: {}) })
+          }
+        }
+
+      }
+    }
+  }
+
+  return result
+}
+
+export function isDynamicLootTable<T extends string=string, V extends string=string>(table : LootTable<T>, resolver?: LootTableResolver<T, V>) : boolean {
+  const entries : boolean[] = []
+  for (const e of table){
+    if (e.id?.startsWith('@')){
+      const otherInfo = ParseLootID<V>(e.id.substring(1));
+      if (!otherInfo.id) throw new Error(`Unable to parse ${e.id}`)
+      if (!resolver) throw new Error(`No resolver for ${e.id}`)
+      const otherTable = resolver(otherInfo.id)
+      if (!otherTable) throw new Error(`${e.id} could not be resolved`)
+     entries.push(isDynamicLootTable(otherTable, resolver)); 
+    }
+    else entries.push(!!e.dynamicPool)
+  }
+  return entries.some(e => e === true)
+}
+
+export function getDynamicPools<T extends string=string, V extends string=string>(table: LootTable<T>, resolver?: LootTableResolver<T, V>) : string[]{
+  let pools : string[] = []
+  for (const e of table){
+    if (e.id?.startsWith('@')){
+      const otherInfo = ParseLootID<V>(e.id.substring(1));
+      if (!otherInfo.id) throw new Error(`Unable to parse ${e.id}`)
+      if (!resolver) throw new Error(`No resolver for ${e.id}`)
+      const otherTable = resolver(otherInfo.id)
+      if (!otherTable) throw new Error(`${e.id} could not be resolved`)
+     pools = pools.concat(getDynamicPools(otherTable, resolver)); 
+    }
+    else if(!!e.dynamicPool){
+      pools.push(e.dynamicPool)
+  }
+}
+  return pools
 }
