@@ -6,7 +6,7 @@ export interface ILootTableEntry<T extends string = string> {
   step: number
   group: number
   transform: null | ((x: number) => number),
-  dynamicPool? : string
+  dynamicPoolId? : string
 }
 
 export declare type LootTable<T extends string = string> = Array<
@@ -26,7 +26,7 @@ export declare type LootTableResolverAsync<
 export interface ILootItem<T extends string = string> {
   id: T | null
   quantity: number,
-  dynamicPool?: string
+  dynamicPoolId?: string
 }
 
 export type Loot<T extends string = string> = Array<ILootItem<T>>
@@ -326,7 +326,7 @@ export async function GetLootAsync<
           }
         } else {
           if (entry.id !== null) {
-            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPool ?  {dynamicPool: entry.dynamicPool}: {})  })
+            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPoolId ?  {dynamicPoolId: entry.dynamicPoolId}: {})  })
           }
         }
       }
@@ -406,7 +406,7 @@ export function GetLoot<
           }
         } else {
           if (entry.id !== null) {
-            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPool ?  {dynamicPool: entry.dynamicPool}: {})  })
+            AddLoot(result, { id: entry.id, quantity, ...(entry.dynamicPoolId ?  {dynamicPoolId: entry.dynamicPoolId}: {})  })
           }
         }
       }
@@ -459,7 +459,7 @@ export function GetLootAverage<
           MergeLoot(result, loot)
         } else {
           if (e.id !== null) {
-            AddLoot(result, { id: e.id, quantity })
+            AddLoot(result, { id: e.id, quantity, ...(e.dynamicPoolId ?  {dynamicPoolId: e.dynamicPoolId}: {})   })
           }
         }
 
@@ -514,7 +514,7 @@ export function GetLootPercentages<
           MergeLoot(result, loot)
         } else {
           if (e.id !== null) {
-            AddLoot(result, { id: e.id, quantity, ...(e.dynamicPool ?  {dynamicPool: e.dynamicPool}: {}) })
+            AddLoot(result, { id: e.id, quantity, ...(e.dynamicPoolId ?  {dynamicPoolId: e.dynamicPoolId}: {}) })
           }
         }
 
@@ -536,7 +536,7 @@ export function isDynamicLootTable<T extends string=string, V extends string=str
       if (!otherTable) throw new Error(`${e.id} could not be resolved`)
      entries.push(isDynamicLootTable(otherTable, resolver)); 
     }
-    else entries.push(!!e.dynamicPool)
+    else entries.push(!!e.dynamicPoolId)
   }
   return entries.some(e => e === true)
 }
@@ -552,8 +552,8 @@ export function getDynamicPools<T extends string=string, V extends string=string
       if (!otherTable) throw new Error(`${e.id} could not be resolved`)
      pools = pools.concat(getDynamicPools(otherTable, resolver)); 
     }
-    else if(!!e.dynamicPool){
-      pools.push(e.dynamicPool)
+    else if(!!e.dynamicPoolId){
+      pools.push(e.dynamicPoolId)
   }
 }
   return pools
